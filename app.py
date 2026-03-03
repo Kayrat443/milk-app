@@ -13,8 +13,11 @@ ADMIN_PASSWORD = "12345"  # Твой пароль
 # Функция загрузки базы
 def load_data():
     if os.path.exists(EMP_FILE):
-        return pd.read_csv(EMP_FILE)
-    return pd.DataFrame(columns=["Код", "Сотрудник", "Должность", "Литр"])
+        # Читаем CSV и убираем лишние пробелы в названиях колонок
+        df = pd.read_csv(EMP_FILE)
+        df.columns = df.columns.str.strip()
+        return df
+    return pd.DataFrame(columns=["Код", "Сотрудник", "Должность", "Дней", "Литр"])
 
 df_emp = load_data()
 
@@ -22,76 +25,91 @@ df_emp = load_data()
 st.sidebar.title("Управление")
 page = st.sidebar.radio("Перейти к:", ["📱 Раздача", "📊 Статистика", "⚙️ Настройка сотрудников"])
 
-# --- 1. СТРАНИЦА РАЗДАЧИ (БЕЗ ПАРОЛЯ) ---
+# --- 1. СТРАНИЦА РАЗДАЧИ ---
 if page == "📱 Раздача":
     st.title("🥛 Регистрация выдачи")
-    code = st.number_input("Введите ваш Код", step=1, value=0)
+    code = st.number_input("Введите ваш личный код", step=1, value=0)
     
     if code > 0:
         user = df_emp[df_emp['Код'] == code]
         if not user.empty:
             name = user.iloc[0]['Сотрудник']
-            norma = user.iloc[0]['Литр']
+            
+            # Ищем колонки Литр и Дней (с учетом регистра)
+            norma = 0.0
+            days = 0
+            
+            for col in df_emp.columns:
+                if col.lower() == 'литр':
+                    # Заменяем запятую на точку для расчетов
+                    norma = str(user.iloc[0][col]).replace(',', '.')
+                if col.lower() == 'дней':
+                    days = user.iloc[0][col]
+
             st.success(f"Сотрудник: {name}")
             
-            # Чиним отображение литров (заменяем запятую на точку если нужно)
-            try:
-                val = float(str(norma).replace(',', '.'))
-            except:
-                val = 0.0
-                
-            liters = st.number_input("Литров к получению", value=val)
+            col_ui1, col_ui2 = st.columns(2)
+            with col_ui1:
+                st.info(f"Дней по плану: {days}")
+            with col_ui2:
+                try:
+                    val = float(norma)
+                except:
+                    val = 0.0
+                liters = st.number_input("Литров к получению", value=val)
             
             if st.button("✅ Подтвердить получение"):
                 new_entry = pd.DataFrame([[datetime.now().strftime('%d.%m %H:%M'), code, name, liters]], 
                                          columns=["Дата", "Код", "Имя", "Литры"])
                 new_entry.to_csv(LOG_FILE, mode='a', index=False, header=not os.path.exists(LOG_FILE))
                 st.balloons()
-                st.success(f"Записано: {name} получил {liters} л.")
+                st.success(f"Записано в базу!")
         else:
-            st.error("Код не найден в базе данных")
+            st.error("Код не найден в списке сотрудников")
 
-# --- ПРОВЕРКА ПАРОЛЯ ДЛЯ ОСТАЛЬНЫХ СТРАНИЦ ---
+# --- ПРОВЕРКА ПАРОЛЯ ДЛЯ АДМИНКИ ---
 else:
     st.sidebar.markdown("---")
     pwd_input = st.sidebar.text_input("Введите пароль админа", type="password")
     
     if pwd_input == ADMIN_PASSWORD:
-        # --- 2. СТРАНИЦА СТАТИСТИКИ ---
         if page == "📊 Статистика":
-            st.title("📈 История выдачи молока")
+            st.title("📈 История выдачи")
             if os.path.exists(LOG_FILE):
                 df_log = pd.read_csv(LOG_FILE)
-                st.metric("Всего выдано за сегодня", f"{round(df_log['Литры'].sum(), 2)} л.")
+                st.metric("Всего выдано (л)", round(df_log['Литры'].sum(), 2))
                 st.dataframe(df_log, use_container_width=True)
-                st.download_button("Скачать отчет CSV", df_log.to_csv(index=False), "report.csv")
+                st.download_button("📥 Скачать отчет", df_log.to_csv(index=False), "milk_report.csv")
             else:
-                st.info("Данных о выдаче пока нет.")
+                st.info("Записей пока нет.")
 
-        # --- 3. АДМИНКА (УПРАВЛЕНИЕ) ---
         elif page == "⚙️ Настройка сотрудников":
             st.title("⚙️ Управление персоналом")
-            tab1, tab2 = st.tabs(["📋 Список", "➕ Добавить нового"])
+            tab1, tab2 = st.tabs(["📋 Список сотрудников", "➕ Добавить"])
             
             with tab1:
+                # Редактор таблицы прямо в браузере
                 edited_df = st.data_editor(df_emp, num_rows="dynamic")
                 if st.button("💾 Сохранить изменения"):
                     edited_df.to_csv(EMP_FILE, index=False)
-                    st.success("Список обновлен!")
+                    st.success("Данные успешно обновлены!")
 
             with tab2:
                 with st.form("new_user"):
-                    new_code = st.number_input("Код", step=1)
-                    new_name = st.text_input("ФИО")
-                    new_pos = st.text_input("Должность")
-                    new_litr = st.number_input("Норма (литров)", value=9.5)
-                    if st.form_submit_button("Добавить"):
-                        new_row = pd.DataFrame([[new_code, new_name, new_pos, new_litr]], 
-                                               columns=["Код", "Сотрудник", "Должность", "Литр"])
+                    c1, c2 = st.columns(2)
+                    n_code = c1.number_input("Код", step=1)
+                    n_name = c2.text_input("ФИО")
+                    n_pos = st.text_input("Должность")
+                    c3, c4 = st.columns(2)
+                    n_days = c3.number_input("Дней", value=19)
+                    n_litr = c4.number_input("Норма литров", value=9.5)
+                    
+                    if st.form_submit_button("Добавить сотрудника"):
+                        new_row = pd.DataFrame([[n_code, n_name, n_pos, n_days, n_litr]], 
+                                               columns=["Код", "Сотрудник", "Должность", "Дней", "Литр"])
                         new_row.to_csv(EMP_FILE, mode='a', index=False, header=not os.path.exists(EMP_FILE))
-                        st.success("Добавлено! Обновите страницу.")
+                        st.success("Сотрудник добавлен!")
+                        st.rerun()
     
-    elif pwd_input == "":
-        st.warning("Пожалуйста, введите пароль в боковом меню для доступа к этому разделу.")
-    else:
-        st.error("Неверный пароль!")
+    elif pwd_input != "":
+        st.error("Неверный пароль")
