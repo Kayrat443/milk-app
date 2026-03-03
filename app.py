@@ -18,31 +18,25 @@ def load_data():
         return df
     return pd.DataFrame(columns=["Код", "Сотрудник", "Должность", "Дней", "Литр"])
 
-# Функция генерации PDF с колонкой "Код"
 def create_pdf(df, period_text):
     pdf = FPDF()
     pdf.add_page()
     pdf.add_font('DejaVu', '', 'https://github.com/reingart/pyfpdf/raw/master/font/DejaVuSans.ttf', uni=True)
     pdf.set_font('DejaVu', '', 14)
-    
     pdf.cell(200, 10, txt=f"Отчет по выдаче молока: {period_text}", ln=True, align='C')
     pdf.ln(10)
-    
     pdf.set_font('DejaVu', '', 9)
-    # Заголовки таблицы (расширили под Код)
     pdf.cell(35, 10, "Дата", border=1)
     pdf.cell(20, 10, "Код", border=1)
     pdf.cell(85, 10, "Сотрудник", border=1)
     pdf.cell(25, 10, "Литры", border=1)
     pdf.ln()
-    
     for i, row in df.iterrows():
         pdf.cell(35, 10, str(row['Дата']), border=1)
         pdf.cell(20, 10, str(row['Код']), border=1)
         pdf.cell(85, 10, str(row['Имя']), border=1)
         pdf.cell(25, 10, str(row['Литры']), border=1)
         pdf.ln()
-        
     pdf.ln(10)
     pdf.set_font('DejaVu', '', 12)
     pdf.cell(200, 10, txt=f"ИТОГО ВЫДАНО: {df['Литры'].sum()} л.", ln=True)
@@ -55,28 +49,28 @@ page = st.sidebar.radio("Перейти к:", ["📱 Раздача", "📊 Ст
 
 if page == "📱 Раздача":
     st.title("🥛 Регистрация выдачи")
-    code = st.number_input("Введите ваш код", step=1, value=0)
-    if code > 0:
+    
+    # ИСПОЛЬЗУЕМ None ЧТОБЫ ПОЛЕ БЫЛО ПУСТЫМ
+    code = st.number_input("Введите ваш код", step=1, value=None, placeholder="Начните вводить код...")
+    
+    if code is not None:
         user = df_emp[df_emp['Код'] == code]
         if not user.empty:
             name = user.iloc[0]['Сотрудник']
             st.success(f"Сотрудник: {name}")
             
-            # ОГРАНИЧЕНИЕ: max_value=20.0 защитит от случайного ввода "40"
-            liters = st.number_input("Литров получено", min_value=0.0, max_value=20.0, value=0.0, step=0.5)
-            
-            if liters > 20:
-                st.error("Ошибка! Нельзя выдать более 20 литров за раз.")
+            # ЛИТРЫ ТАКЖЕ С ПУСТЫМ ЗНАЧЕНИЕМ
+            liters = st.number_input("Литров получено", min_value=0.0, max_value=20.0, value=None, step=0.5, placeholder="0.0")
             
             if st.button("✅ Подтвердить"):
-                if liters > 0:
+                if liters is not None and liters > 0:
                     new_entry = pd.DataFrame([[datetime.now().strftime('%d.%m.%Y %H:%M'), code, name, liters]], 
                                              columns=["Дата", "Код", "Имя", "Литры"])
                     new_entry.to_csv(LOG_FILE, mode='a', index=False, header=not os.path.exists(LOG_FILE))
                     st.balloons()
                     st.success(f"Данные сохранены для {name}")
                 else:
-                    st.warning("Введите количество литров")
+                    st.error("Укажите количество литров!")
         else:
             st.error("Код не найден")
 
@@ -89,14 +83,11 @@ else:
             st.title("📈 История выдачи")
             if os.path.exists(LOG_FILE):
                 df_log = pd.read_csv(LOG_FILE)
-                # Конвертируем дату для фильтрации
                 df_log['dt_obj'] = pd.to_datetime(df_log['Дата'], dayfirst=True)
                 
-                st.subheader("Фильтр периода")
                 filter_type = st.selectbox("Период:", ["Сегодня", "За неделю", "За месяц", "Весь период", "Выбрать даты"])
-                
                 today = datetime.now()
-                start_date = datetime(2000, 1, 1) # По умолчанию для "Весь период"
+                start_date = datetime(2000, 1, 1)
                 
                 if filter_type == "Сегодня":
                     start_date = today.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -114,7 +105,6 @@ else:
                 filtered_df = df_log.loc[mask].sort_values(by='dt_obj', ascending=False)
 
                 st.metric("ИТОГО ЗА ПЕРИОД", f"{round(filtered_df['Литры'].sum(), 2)} л.")
-                # Показываем таблицу с Кодом
                 st.dataframe(filtered_df[["Дата", "Код", "Имя", "Литры"]], use_container_width=True)
 
                 col1, col2, col3 = st.columns(3)
