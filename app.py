@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 from datetime import datetime, timedelta
-from fpdf import FPDF
 
 # Настройка страницы
 st.set_page_config(page_title="Milk Control PRO", layout="wide")
@@ -18,39 +17,15 @@ def load_data():
         return df
     return pd.DataFrame(columns=["Код", "Сотрудник", "Должность", "Дней", "Литр"])
 
-def create_pdf(df, period_text):
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.add_font('DejaVu', '', 'https://github.com/reingart/pyfpdf/raw/master/font/DejaVuSans.ttf', uni=True)
-    pdf.set_font('DejaVu', '', 14)
-    pdf.cell(200, 10, txt=f"Отчет по выдаче молока: {period_text}", ln=True, align='C')
-    pdf.ln(10)
-    pdf.set_font('DejaVu', '', 9)
-    pdf.cell(35, 10, "Дата", border=1)
-    pdf.cell(20, 10, "Код", border=1)
-    pdf.cell(85, 10, "Сотрудник", border=1)
-    pdf.cell(25, 10, "Литры", border=1)
-    pdf.ln()
-    for i, row in df.iterrows():
-        pdf.cell(35, 10, str(row['Дата']), border=1)
-        pdf.cell(20, 10, str(row['Код']), border=1)
-        pdf.cell(85, 10, str(row['Имя']), border=1)
-        pdf.cell(25, 10, str(row['Литры']), border=1)
-        pdf.ln()
-    pdf.ln(10)
-    pdf.set_font('DejaVu', '', 12)
-    pdf.cell(200, 10, txt=f"ИТОГО ВЫДАНО: {df['Литры'].sum()} л.", ln=True)
-    return pdf.output()
-
 df_emp = load_data()
 
 st.sidebar.title("Управление")
 page = st.sidebar.radio("Перейти к:", ["📱 Раздача", "📊 Статистика", "⚙️ Настройка"])
 
+# --- 1. СТРАНИЦА РАЗДАЧИ ---
 if page == "📱 Раздача":
     st.title("🥛 Регистрация выдачи")
     
-    # ИСПОЛЬЗУЕМ None ЧТОБЫ ПОЛЕ БЫЛО ПУСТЫМ
     code = st.number_input("Введите ваш код", step=1, value=None, placeholder="Начните вводить код...")
     
     if code is not None:
@@ -59,7 +34,6 @@ if page == "📱 Раздача":
             name = user.iloc[0]['Сотрудник']
             st.success(f"Сотрудник: {name}")
             
-            # ЛИТРЫ ТАКЖЕ С ПУСТЫМ ЗНАЧЕНИЕМ
             liters = st.number_input("Литров получено", min_value=0.0, max_value=20.0, value=None, step=0.5, placeholder="0.0")
             
             if st.button("✅ Подтвердить"):
@@ -74,18 +48,22 @@ if page == "📱 Раздача":
         else:
             st.error("Код не найден")
 
+# --- СЕКЦИЯ АДМИНА ---
 else:
     st.sidebar.markdown("---")
     pwd_input = st.sidebar.text_input("Пароль админа", type="password")
     
     if pwd_input == ADMIN_PASSWORD:
+        # --- 2. СТРАНИЦА СТАТИСТИКИ ---
         if page == "📊 Статистика":
             st.title("📈 История выдачи")
             if os.path.exists(LOG_FILE):
                 df_log = pd.read_csv(LOG_FILE)
                 df_log['dt_obj'] = pd.to_datetime(df_log['Дата'], dayfirst=True)
                 
-                filter_type = st.selectbox("Период:", ["Сегодня", "За неделю", "За месяц", "Весь период", "Выбрать даты"])
+                st.subheader("Фильтр периода")
+                filter_type = st.selectbox("Выберите период:", ["Сегодня", "За неделю", "За месяц", "Весь период", "Выбрать даты"])
+                
                 today = datetime.now()
                 start_date = datetime(2000, 1, 1)
                 
@@ -107,23 +85,24 @@ else:
                 st.metric("ИТОГО ЗА ПЕРИОД", f"{round(filtered_df['Литры'].sum(), 2)} л.")
                 st.dataframe(filtered_df[["Дата", "Код", "Имя", "Литры"]], use_container_width=True)
 
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 with col1:
-                    st.download_button("📥 Excel (CSV)", filtered_df.to_csv(index=False), "milk_report.csv")
+                    # Кнопка скачивания CSV (открывается в Excel)
+                    st.download_button("📥 Скачать Excel (CSV)", filtered_df.to_csv(index=False), "milk_report.csv")
                 with col2:
-                    if st.button("📄 Создать PDF"):
-                        pdf_data = create_pdf(filtered_df, filter_type)
-                        st.download_button("⬇️ Скачать PDF", pdf_data, "milk_report.pdf", "application/pdf")
-                with col3:
-                    if st.button("🚨 Очистить историю"):
+                    if st.button("🚨 Очистить ВСЮ историю"):
                         os.remove(LOG_FILE)
                         st.rerun()
             else:
-                st.info("Записей пока нет")
+                st.info("История пуста")
 
+        # --- 3. НАСТРОЙКА БАЗЫ ---
         elif page == "⚙️ Настройка":
             st.title("⚙️ Настройка персонала")
             edited_df = st.data_editor(df_emp, num_rows="dynamic")
             if st.button("💾 Сохранить изменения"):
                 edited_df.to_csv(EMP_FILE, index=False)
                 st.success("Список обновлен!")
+    
+    elif pwd_input != "":
+        st.error("Неверный пароль")
