@@ -10,10 +10,9 @@ EMP_FILE = 'employees.csv'
 LOG_FILE = 'log.csv'
 ADMIN_PASSWORD = "12345"  # Твой пароль
 
-# Функция загрузки базы
+# Функция загрузки базы сотрудников
 def load_data():
     if os.path.exists(EMP_FILE):
-        # Читаем CSV и убираем лишние пробелы в названиях колонок
         df = pd.read_csv(EMP_FILE)
         df.columns = df.columns.str.strip()
         return df
@@ -35,13 +34,11 @@ if page == "📱 Раздача":
         if not user.empty:
             name = user.iloc[0]['Сотрудник']
             
-            # Ищем колонки Литр и Дней (с учетом регистра)
             norma = 0.0
             days = 0
             
             for col in df_emp.columns:
                 if col.lower() == 'литр':
-                    # Заменяем запятую на точку для расчетов
                     norma = str(user.iloc[0][col]).replace(',', '.')
                 if col.lower() == 'дней':
                     days = user.iloc[0][col]
@@ -59,36 +56,48 @@ if page == "📱 Раздача":
                 liters = st.number_input("Литров к получению", value=val)
             
             if st.button("✅ Подтвердить получение"):
-                new_entry = pd.DataFrame([[datetime.now().strftime('%d.%m %H:%M'), code, name, liters]], 
+                new_entry = pd.DataFrame([[datetime.now().strftime('%d.%m.%Y %H:%M'), code, name, liters]], 
                                          columns=["Дата", "Код", "Имя", "Литры"])
                 new_entry.to_csv(LOG_FILE, mode='a', index=False, header=not os.path.exists(LOG_FILE))
                 st.balloons()
                 st.success(f"Записано в базу!")
         else:
-            st.error("Код не найден в списке сотрудников")
+            st.error("Код не найден")
 
-# --- ПРОВЕРКА ПАРОЛЯ ДЛЯ АДМИНКИ ---
+# --- ПРОВЕРКА ПАРОЛЯ ---
 else:
     st.sidebar.markdown("---")
     pwd_input = st.sidebar.text_input("Введите пароль админа", type="password")
     
     if pwd_input == ADMIN_PASSWORD:
+        # --- 2. СТРАНИЦА СТАТИСТИКИ ---
         if page == "📊 Статистика":
             st.title("📈 История выдачи")
             if os.path.exists(LOG_FILE):
                 df_log = pd.read_csv(LOG_FILE)
-                st.metric("Всего выдано (л)", round(df_log['Литры'].sum(), 2))
+                
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.metric("Всего выдано (л)", round(df_log['Литры'].sum(), 2))
+                with col2:
+                    # Кнопка очистки
+                    st.write("---")
+                    if st.button("🚨 Очистить историю"):
+                        os.remove(LOG_FILE)
+                        st.warning("История выдачи полностью удалена!")
+                        st.rerun()
+
                 st.dataframe(df_log, use_container_width=True)
-                st.download_button("📥 Скачать отчет", df_log.to_csv(index=False), "milk_report.csv")
+                st.download_button("📥 Скачать отчет (Excel/CSV)", df_log.to_csv(index=False), "milk_report.csv")
             else:
                 st.info("Записей пока нет.")
 
+        # --- 3. АДМИНКА ---
         elif page == "⚙️ Настройка сотрудников":
             st.title("⚙️ Управление персоналом")
             tab1, tab2 = st.tabs(["📋 Список сотрудников", "➕ Добавить"])
             
             with tab1:
-                # Редактор таблицы прямо в браузере
                 edited_df = st.data_editor(df_emp, num_rows="dynamic")
                 if st.button("💾 Сохранить изменения"):
                     edited_df.to_csv(EMP_FILE, index=False)
@@ -104,11 +113,11 @@ else:
                     n_days = c3.number_input("Дней", value=19)
                     n_litr = c4.number_input("Норма литров", value=9.5)
                     
-                    if st.form_submit_button("Добавить сотрудника"):
+                    if st.form_submit_button("Добавить"):
                         new_row = pd.DataFrame([[n_code, n_name, n_pos, n_days, n_litr]], 
                                                columns=["Код", "Сотрудник", "Должность", "Дней", "Литр"])
                         new_row.to_csv(EMP_FILE, mode='a', index=False, header=not os.path.exists(EMP_FILE))
-                        st.success("Сотрудник добавлен!")
+                        st.success("Добавлено!")
                         st.rerun()
     
     elif pwd_input != "":
